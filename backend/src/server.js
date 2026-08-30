@@ -8,15 +8,11 @@ const { replanSchedule } = require("./services/replanner");
 
 const app = express();
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-
-// ============================================================
-// APPLICATION STATE
-// ============================================================
 
 let dataset = generateDataset();
 
@@ -34,11 +30,6 @@ let validationResult = validateSchedule(
 );
 
 
-// ============================================================
-// HELPERS
-// ============================================================
-
-function findStudentByName(name) {
     return dataset.students.find(
         student => student.name === name
     );
@@ -464,7 +455,7 @@ app.use((req, res) => {
 // START
 // ============================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
 
     console.log(
         "========================================"
