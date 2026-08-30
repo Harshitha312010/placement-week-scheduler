@@ -14,6 +14,10 @@ app.use(cors());
 app.use(express.json());
 
 
+// ============================================================
+// DATASET + INITIAL SCHEDULE
+// ============================================================
+
 let dataset = generateDataset();
 
 let scheduleResult = scheduleInterviews(
@@ -30,6 +34,19 @@ let validationResult = validateSchedule(
 );
 
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function refreshValidation() {
+    validationResult = validateSchedule(
+        scheduleResult.schedule,
+        scheduleResult.unscheduled,
+        dataset.rooms
+    );
+}
+
+function findStudentByName(name) {
     return dataset.students.find(
         student => student.name === name
     );
@@ -53,17 +70,9 @@ function findRoomByName(name) {
     );
 }
 
-function refreshValidation() {
-    validationResult = validateSchedule(
-        scheduleResult.schedule,
-        scheduleResult.unscheduled,
-        dataset.rooms
-    );
-}
-
 
 // ============================================================
-// HEALTH
+// HEALTH CHECK
 // ============================================================
 
 app.get("/api/health", (req, res) => {
@@ -80,10 +89,10 @@ app.get("/api/health", (req, res) => {
 // ============================================================
 
 app.get("/api/dashboard", (req, res) => {
+    refreshValidation();
 
     res.json({
         success: true,
-
         data: {
             students:
                 dataset.students.length,
@@ -141,13 +150,10 @@ app.get("/api/dashboard", (req, res) => {
 // ============================================================
 
 app.get("/api/schedule", (req, res) => {
-
     res.json({
         success: true,
-
         count:
             scheduleResult.schedule.length,
-
         schedule:
             scheduleResult.schedule
     });
@@ -159,13 +165,10 @@ app.get("/api/schedule", (req, res) => {
 // ============================================================
 
 app.get("/api/unscheduled", (req, res) => {
-
     res.json({
         success: true,
-
         count:
             scheduleResult.unscheduled.length,
-
         unscheduled:
             scheduleResult.unscheduled
     });
@@ -177,9 +180,7 @@ app.get("/api/unscheduled", (req, res) => {
 // ============================================================
 
 app.post("/api/replan", (req, res) => {
-
     try {
-
         const {
             type,
             studentName,
@@ -189,7 +190,6 @@ app.post("/api/replan", (req, res) => {
             delayHours
         } = req.body;
 
-
         if (!type) {
             return res.status(400).json({
                 success: false,
@@ -198,21 +198,19 @@ app.post("/api/replan", (req, res) => {
             });
         }
 
-
         const disruption = {
             type
         };
 
 
         // ----------------------------------------------------
-        // Resolve disruption target
+        // STUDENT WITHDRAWAL
         // ----------------------------------------------------
 
         if (
             type ===
             "STUDENT_WITHDRAWAL"
         ) {
-
             const student =
                 findStudentByName(
                     studentName
@@ -231,11 +229,14 @@ app.post("/api/replan", (req, res) => {
         }
 
 
+        // ----------------------------------------------------
+        // COMPANY DELAY
+        // ----------------------------------------------------
+
         if (
             type ===
             "COMPANY_DELAY"
         ) {
-
             const company =
                 findCompanyByName(
                     companyName
@@ -257,11 +258,14 @@ app.post("/api/replan", (req, res) => {
         }
 
 
+        // ----------------------------------------------------
+        // PANEL DROP
+        // ----------------------------------------------------
+
         if (
             type ===
             "PANEL_DROP"
         ) {
-
             const panel =
                 findPanelByName(
                     panelName
@@ -280,11 +284,14 @@ app.post("/api/replan", (req, res) => {
         }
 
 
+        // ----------------------------------------------------
+        // ROOM UNAVAILABLE
+        // ----------------------------------------------------
+
         if (
             type ===
             "ROOM_UNAVAILABLE"
         ) {
-
             const room =
                 findRoomByName(
                     roomName
@@ -304,7 +311,7 @@ app.post("/api/replan", (req, res) => {
 
 
         // ----------------------------------------------------
-        // Execute replan
+        // RUN REPLANNER
         // ----------------------------------------------------
 
         const result =
@@ -318,32 +325,30 @@ app.post("/api/replan", (req, res) => {
 
 
         // ----------------------------------------------------
-        // Save new schedule
+        // SAVE UPDATED SCHEDULE
         // ----------------------------------------------------
 
         scheduleResult.schedule =
             result.schedule;
 
-
         /*
-         * Keep the original unscheduled requests and
-         * add newly unscheduled replan requests.
+         * Keep existing unscheduled interviews and add
+         * any newly unscheduled interviews produced by
+         * the disruption.
          */
         scheduleResult.unscheduled = [
             ...scheduleResult.unscheduled,
             ...result.unscheduled
         ];
 
-
         refreshValidation();
 
 
         // ----------------------------------------------------
-        // Response
+        // RETURN RESULT
         // ----------------------------------------------------
 
         return res.json({
-
             success: true,
 
             message:
@@ -386,7 +391,6 @@ app.post("/api/replan", (req, res) => {
         });
 
     } catch (error) {
-
         console.error(
             "Replan error:",
             error
@@ -404,36 +408,51 @@ app.post("/api/replan", (req, res) => {
 
 
 // ============================================================
-// RESET
+// RESET DATASET
 // ============================================================
 
 app.post("/api/reset", (req, res) => {
+    try {
+        dataset =
+            generateDataset();
 
-    dataset =
-        generateDataset();
+        scheduleResult =
+            scheduleInterviews(
+                dataset.companies,
+                dataset.students,
+                dataset.rooms,
+                dataset.panels
+            );
 
-    scheduleResult =
-        scheduleInterviews(
-            dataset.companies,
-            dataset.students,
-            dataset.rooms,
-            dataset.panels
+        refreshValidation();
+
+        res.json({
+            success: true,
+
+            message:
+                "Dataset and schedule regenerated.",
+
+            scheduled:
+                scheduleResult.schedule.length,
+
+            unscheduled:
+                scheduleResult.unscheduled.length
+        });
+
+    } catch (error) {
+        console.error(
+            "Reset error:",
+            error
         );
 
-    refreshValidation();
-
-    res.json({
-        success: true,
-
-        message:
-            "Dataset and schedule regenerated.",
-
-        scheduled:
-            scheduleResult.schedule.length,
-
-        unscheduled:
-            scheduleResult.unscheduled.length
-    });
+        res.status(500).json({
+            success: false,
+            message:
+                "Unable to reset schedule.",
+            error:
+                error.message
+        });
+    }
 });
 
 
@@ -442,7 +461,6 @@ app.post("/api/reset", (req, res) => {
 // ============================================================
 
 app.use((req, res) => {
-
     res.status(404).json({
         success: false,
         message:
@@ -452,42 +470,63 @@ app.use((req, res) => {
 
 
 // ============================================================
-// START
+// ERROR HANDLER
 // ============================================================
 
-app.listen(PORT, "0.0.0.0", () => {
-
-    console.log(
-        "========================================"
+app.use((err, req, res, next) => {
+    console.error(
+        "Server error:",
+        err
     );
 
-    console.log(
-        "   PLACEMENT WEEK SCHEDULER API"
-    );
-
-    console.log(
-        "========================================"
-    );
-
-    console.log(
-        `Server running on http://localhost:${PORT}`
-    );
-
-    console.log(
-        `Scheduled interviews: ${
-            scheduleResult.schedule.length
-        }`
-    );
-
-    console.log(
-        `Unscheduled interviews: ${
-            scheduleResult.unscheduled.length
-        }`
-    );
-
-    console.log(
-        `Schedule valid: ${
-            validationResult.valid
-        }`
-    );
+    res.status(500).json({
+        success: false,
+        message:
+            "Internal server error."
+    });
 });
+
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+        console.log(
+            "========================================"
+        );
+
+        console.log(
+            "   PLACEMENT WEEK SCHEDULER API"
+        );
+
+        console.log(
+            "========================================"
+        );
+
+        console.log(
+            `Server running on http://localhost:${PORT}`
+        );
+
+        console.log(
+            `Scheduled interviews: ${
+                scheduleResult.schedule.length
+            }`
+        );
+
+        console.log(
+            `Unscheduled interviews: ${
+                scheduleResult.unscheduled.length
+            }`
+        );
+
+        console.log(
+            `Schedule valid: ${
+                validationResult.valid
+            }`
+        );
+    }
+);
